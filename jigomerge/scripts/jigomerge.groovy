@@ -14,7 +14,7 @@
 **/   
 public class SvnMergeTool {
 	
-	def static final List<String> DEFAULT_NO_MERGE_COMMENT_PATTERNS= ['maven-release-plugin', 'NOMERGE', 'nomerge', 'no-merge', 'NO-MERGE']
+	def static final List<String> DEFAULT_NO_MERGE_COMMENT_PATTERNS= ['maven-release-plugin', 'NOMERGE', 'nomerge', 'no-merge', 'NO-MERGE', 'Initialized merge tracking via "svnmerge" with revisions']
 
     /** parameter dryRun - should the script commit the changes or not */
     def boolean dryRun = true
@@ -35,14 +35,17 @@ public class SvnMergeTool {
 	 * launch the merge <br>
 	 * return boolean - true if everything went fine or false if manual merge to be done
 	 */
-	public def boolean launch(){
+	public def boolean launch(String initialMergeUrl){
 		def boolean globalStatus = true
+
+       def String repositoryRoot = retrieveRepositoryRoot()
+        def String mergeUrl = initialMergeUrl.replace(repositoryRoot,'')
 		
 		// reset workspace
 		resetWorkspace()
 		
 		// retrieve all available revisions
-		def revisions = retrieveAvailableRevisions()
+		def revisions = retrieveAvailableRevisions(mergeUrl)
 		
 		def nbRevisions = revisions.size()
 		
@@ -59,7 +62,7 @@ public class SvnMergeTool {
 			if(shouldRevisionBeBlocked(comment)){
 				println '  Blocking revision ' + revision + ' with comment \''+comment+'\' ...'
 				// block revision
-				def status = svnMergeBlock(revision)
+				def status = svnMergeBlock(mergeUrl,revision)
 				if(!status) { throw new RuntimeException('Blocking revision ' + revision + ' failed !')
 				}
 				
@@ -81,7 +84,7 @@ public class SvnMergeTool {
 				subRevisions.add(revision)
 				def revisionsList = buildRevisionsList(subRevisions)
 				
-				svnMergeMerge(revisionsList)
+				svnMergeMerge(mergeUrl,revisionsList)
 				
 				def hasConflicts = hasWorkspaceConflicts()
 				
@@ -96,7 +99,7 @@ public class SvnMergeTool {
 					break;
 				}else{
 					if(mergeOneByOne){
-						mergeAndCommit(revision)
+						mergeAndCommit(mergeUrl,revision)
 					}else{
 						println '  Revision ' + revision + ' has no conflict'
 						// add current revision to revisions to be merged
@@ -115,7 +118,7 @@ public class SvnMergeTool {
 				
 				def validRevisionsList = buildRevisionsList(validRevisions)
 				
-				mergeAndCommit(validRevisionsList)
+				mergeAndCommit(mergeUrl,validRevisionsList)
 			}else{
 				println 'No valid revision to merge'
 			}
@@ -131,8 +134,8 @@ public class SvnMergeTool {
 	}
 	
 	
-	protected def void mergeAndCommit(String revisionsList){
-			def status = svnMergeMerge(revisionsList)
+	protected def void mergeAndCommit(String mergeUrl, String revisionsList){
+			def status = svnMergeMerge(mergeUrl, revisionsList)
 			if(!status) { throw new RuntimeException('Merging valid revisions (' + revisionsList + ') failed !')
 			}
 			
@@ -208,8 +211,8 @@ public class SvnMergeTool {
 		return block
 	}
 	
-	protected def String[] retrieveAvailableRevisions(){
-		def process = executeCommand('svnmerge avail')
+	protected def String[] retrieveAvailableRevisions(String mergeUrl){
+		def process = executeCommand('svnmerge avail -S '+ mergeUrl)
 		def log = process.in.text
 		
 		def tmpRevisions = []
@@ -234,10 +237,10 @@ public class SvnMergeTool {
 		return revisions
 	}
 	
-	protected def String retrieveCommentFromRevision(String revision){
-		def process = executeCommand('svnmerge avail -l -r ' + revision)
+	protected def String retrieveCommentFromRevision(String mergeUrl, String revision){
+		def process = executeCommand('svnmerge avail -l -r ' + revision + ' -S '+ mergeUrl)
 		def log = process.in.text
-		
+
 		def comment = log.trim()
 		return comment
 	}
@@ -295,12 +298,12 @@ public class SvnMergeTool {
         return true
     }
 	
-	protected def boolean svnMergeBlock(String revision){
-		return executeCommandWithStatus('svnmerge block -r ' + revision)
+	protected def boolean svnMergeBlock(String mergeUrl, String revision){
+		return executeCommandWithStatus('svnmerge block -r ' + revision + ' -S '+ mergeUrl)
 	}
 	
-	protected def boolean svnMergeMerge(String revisions){
-		return executeCommandWithStatus('svnmerge merge -r ' + revisions)
+	protected def boolean svnMergeMerge(String mergeUrl, String revisions){
+		return executeCommandWithStatus('svnmerge merge -r ' + revisions + ' -S '+ mergeUrl)
 	}
 	
 	protected def boolean svnUpdate(){
@@ -381,7 +384,7 @@ public class SvnMergeTool {
     }
 
     def boolean status = false
-    status = tool.launch()
+    status = tool.launch(mergeUrl)
 
     System.exit(status ? 0 : 1)
   }
