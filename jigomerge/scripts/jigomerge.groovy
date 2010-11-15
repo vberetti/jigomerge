@@ -14,7 +14,7 @@
 **/   
 public class SvnMergeTool {
 	
-	def static final List<String> DEFAULT_NO_MERGE_COMMENT_PATTERNS= ['maven-release-plugin', 'NOMERGE', 'nomerge', 'no-merge', 'NO-MERGE', 'Initialized merge tracking via "svnmerge" with revisions']
+	def static final List<String> DEFAULT_NO_MERGE_COMMENT_PATTERNS= ['maven-release-plugin', 'NOMERGE', 'NO-MERGE', 'Initialized merge tracking via "svnmerge" with revisions']
 
     /** parameter dryRun - should the script commit the changes or not */
     def boolean dryRun = true
@@ -56,7 +56,7 @@ public class SvnMergeTool {
 		for(int i=0; i< nbRevisions; i++){
 			def revision = revisions[i]
 			println ' Handling revision ' + revision + ' ...'
-			def comment = retrieveCommentFromRevision(revision)
+			def comment = retrieveCommentFromRevision(mergeUrl,revision)
 			
 			// verify on comment that revision should not be blocked
 			if(shouldRevisionBeBlocked(comment)){
@@ -140,7 +140,7 @@ public class SvnMergeTool {
 			}
 			
 			if(!dryRun){
-				println 'Committing merged revisions (' + validRevisionsList + ') ...'
+				println 'Committing merged revisions (' + revisionsList + ') ...'
 				status = svnCommitMerge()
 				if(!status) { throw new RuntimeException('Committing valid revisions merge (' + revisionsList + ') failed !')
 				}
@@ -202,7 +202,7 @@ public class SvnMergeTool {
 	protected def boolean shouldRevisionBeBlocked(String comment){
 		def boolean block = false
 		for(pattern in noMergeCommentPatterns){
-			block = comment.contains(pattern)
+			block = comment.toUpperCase().contains(pattern.toUpperCase())
 			if(block){
 				break;
 			}
@@ -274,14 +274,17 @@ public class SvnMergeTool {
         return initialized
     }
 
-    public def initMerge(String mergeUrl){
+    public def initMerge(String mergeUrl, String revision){
 
 		println 'Initializing merge to \''+mergeUrl+'\' ...' 
 
 		// reset workspace
 		resetWorkspace()
-
-        def status = executeCommandWithStatus('svnmerge init ' + mergeUrl)    
+        String command = 'svnmerge init ' + mergeUrl
+        if(revision != null){
+            command += ' -r1-'+ revision
+        }
+        def status = executeCommandWithStatus(command)
         if(!status) { throw new RuntimeException('Merge initialization to \'' + mergeUrl + '\' failed !')
 				}
 
@@ -352,6 +355,7 @@ public class SvnMergeTool {
     cli.s(longOpt: 'single', 'Merge one revision by one. One merge, one commit, one merge, one commit, ...')
     cli.p(longOpt: 'patterns', args: 1, 'patterns contained in comments of revisions not to be merged, separated by \',\'')
     cli.P(longOpt: 'patternsFile', args: 1, optionalArg: true, 'patterns file, default is \'patterns.txt\'')
+    cli.r(longOpt: 'revisionInit', args: 1, 'initial revision for merge initialization')
     def options = cli.parse(args)
 
     if (!options || options.h || !options.u) {
@@ -363,6 +367,10 @@ public class SvnMergeTool {
     def boolean mergeOneByOne = options.s
     def boolean blockInitialization = options.n
     def String mergeUrl = new String(options.u.value)
+    def String revisionInit = null
+    if(options.r){
+       revisionInit = new String(options.r.value)
+    }
 
     List<String> additionalPatterns = extractAdditionalPatterns(options)
 
@@ -378,7 +386,7 @@ public class SvnMergeTool {
         System.exit(1)
       }
       println 'Merge is not yet initialized to \'' + mergeUrl + '\''
-      tool.initMerge(mergeUrl)
+      tool.initMerge(mergeUrl,revisionInit)
     }else{
       println 'Merge is already initialized'
     }
