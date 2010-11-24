@@ -273,7 +273,7 @@ public class SvnMergeTool {
 
     boolean initialized = false
     log.eachLine() {line ->
-      initialized |= line.startsWith(mergeUrlSuffix)
+      initialized |= line.contains(mergeUrlSuffix)
     }
 
     return initialized
