@@ -20,8 +20,9 @@ public class SvnMergeTool {
   def boolean dryRun = true
   def List<String> noMergeCommentPatterns = []
   def boolean mergeOneByOne = false
+  def boolean mergeEager = false
 
-  SvnMergeTool(boolean dryRun, List<String> noMergeCommentPatterns, boolean mergeOneByOne) {
+  SvnMergeTool(boolean dryRun, List<String> noMergeCommentPatterns, boolean mergeOneByOne, boolean mergeEager) {
     this.dryRun = dryRun
     if (noMergeCommentPatterns.isEmpty()) {
       this.noMergeCommentPatterns = DEFAULT_NO_MERGE_COMMENT_PATTERNS
@@ -29,6 +30,7 @@ public class SvnMergeTool {
       this.noMergeCommentPatterns = noMergeCommentPatterns
     }
     this.mergeOneByOne = mergeOneByOne
+    this.mergeEager = mergeEager
   }
 
   /**
@@ -96,9 +98,14 @@ public class SvnMergeTool {
         if (hasConflicts) {
           // globalStatus is set to false, this means manual merge needs to be done
           globalStatus = false
-          println '  Revision ' + revision + ' has conflict, merging only previous revisions ...'
-          // revision has conflict, stop merge
-          break;
+
+          if(!mergeEager){
+            println '  Revision ' + revision + ' has conflict, merging only previous revisions ...'
+            // revision has conflict, stop merge
+            break;
+          } else{
+            println '  Revision ' + revision + ' has conflict, continue merging ...'
+          }
         } else {
           if (mergeOneByOne) {
             mergeAndCommit(mergeUrl, revision)
@@ -363,6 +370,7 @@ public class SvnMergeTool {
     cli.p(longOpt: 'patterns', args: 1, 'patterns contained in comments of revisions not to be merged, separated by \',\'')
     cli.P(longOpt: 'patternsFile', args: 1, optionalArg: true, 'patterns file, default is \'patterns.txt\'')
     cli.r(longOpt: 'revisionInit', args: 1, 'initial revision for merge initialization')
+    cli.e(longOpt: 'eager', 'eager merge: merge every revision that can be merged without conflict even if it follows a conflict')
     def options = cli.parse(args)
 
     if (!options || options.h || !options.u) {
@@ -373,6 +381,7 @@ public class SvnMergeTool {
     def boolean dryRun = options.d
     def boolean mergeOneByOne = options.s
     def boolean blockInitialization = options.n
+    def boolean isMergeEager = options.e
     def String mergeUrl = new String(options.u.value)
     def String revisionInit = null
     if (options.r) {
@@ -381,7 +390,7 @@ public class SvnMergeTool {
 
     List<String> additionalPatterns = extractAdditionalPatterns(options)
 
-    SvnMergeTool tool = new SvnMergeTool(dryRun, additionalPatterns, mergeOneByOne)
+    SvnMergeTool tool = new SvnMergeTool(dryRun, additionalPatterns, mergeOneByOne, isMergeEager)
 
     // check svnmerge init
     def boolean isMergeInitialized = tool.checkMergeIsInitialized(mergeUrl)
