@@ -16,13 +16,14 @@ public class SvnMergeTool {
 
   def static final List<String> DEFAULT_NO_MERGE_COMMENT_PATTERNS = ['maven-release-plugin', 'NOMERGE', 'NO-MERGE', 'Initialized merge tracking via "svnmerge" with revisions']
 
-  /** parameter dryRun - should the script commit the changes or not  */
+  /** parameter dryRun - should the script commit the changes or not     */
   def boolean dryRun = true
   def List<String> noMergeCommentPatterns = []
   def boolean mergeOneByOne = false
   def boolean mergeEager = false
+  def boolean verbose = false
 
-  SvnMergeTool(boolean dryRun, List<String> noMergeCommentPatterns, boolean mergeOneByOne, boolean mergeEager) {
+  SvnMergeTool(boolean dryRun, List<String> noMergeCommentPatterns, boolean mergeOneByOne, boolean mergeEager, boolean verbose) {
     this.dryRun = dryRun
     if (noMergeCommentPatterns.isEmpty()) {
       this.noMergeCommentPatterns = DEFAULT_NO_MERGE_COMMENT_PATTERNS
@@ -31,13 +32,14 @@ public class SvnMergeTool {
     }
     this.mergeOneByOne = mergeOneByOne
     this.mergeEager = mergeEager
+    this.verbose = verbose
   }
 
   /**
    * launch the merge <br>
    * return boolean - true if everything went fine or false if manual merge to be done
    */
-  public def boolean launch(String initialMergeUrl) {
+  public def boolean launchSvnmerge(String initialMergeUrl) {
     def boolean globalStatus = true
 
     def String repositoryRoot = retrieveRepositoryRoot()
@@ -64,14 +66,14 @@ public class SvnMergeTool {
       if (shouldRevisionBeBlocked(comment)) {
         println '  Blocking revision ' + revision + ' with comment \'' + comment + '\' ...'
         // block revision
-        def status = svnMergeBlock(mergeUrl, revision)
+        def status = svnmergeBlock(mergeUrl, revision)
         if (!status) {
           throw new RuntimeException('Blocking revision ' + revision + ' failed !')
         }
 
         if (!dryRun) {
           println '  Committing block revision ' + revision + ' ...'
-          status = svnCommitMerge()
+          status = svnCommitSvnmerge()
           if (!status) {
             throw new RuntimeException('Commiting block revision ' + revision + ' failed !')
           }
@@ -88,7 +90,7 @@ public class SvnMergeTool {
         subRevisions.add(revision)
         def revisionsList = buildRevisionsList(subRevisions)
 
-        svnMergeMerge(mergeUrl, revisionsList)
+        svnmergeMerge(mergeUrl, revisionsList)
 
         def hasConflicts = hasWorkspaceConflicts()
 
@@ -99,16 +101,16 @@ public class SvnMergeTool {
           // globalStatus is set to false, this means manual merge needs to be done
           globalStatus = false
 
-          if(!mergeEager){
+          if (!mergeEager) {
             println '  Revision ' + revision + ' has conflict, merging only previous revisions ...'
             // revision has conflict, stop merge
             break;
-          } else{
+          } else {
             println '  Revision ' + revision + ' has conflict, continue merging ...'
           }
         } else {
           if (mergeOneByOne) {
-            mergeAndCommit(mergeUrl, revision)
+            svnmergeAndCommit(mergeUrl, revision)
           } else {
             println '  Revision ' + revision + ' has no conflict'
             // add current revision to revisions to be merged
@@ -117,6 +119,8 @@ public class SvnMergeTool {
         }
       }
     }
+
+
 
     if (!mergeOneByOne) {
       // reset workspace before real merge
@@ -127,7 +131,112 @@ public class SvnMergeTool {
 
         def validRevisionsList = buildRevisionsList(validRevisions)
 
-        mergeAndCommit(mergeUrl, validRevisionsList)
+        svnmergeAndCommit(mergeUrl, validRevisionsList)
+      } else {
+        println 'No valid revision to merge'
+      }
+    }
+
+    svnUpdate()
+    if (!globalStatus) {
+      println 'MANUAL MERGE NEEDS TO BE DONE !'
+    }
+    println 'Merge is finished !'
+
+    return globalStatus
+  }
+
+  /**
+   * launch the merge <br>
+   * return boolean - true if everything went fine or false if manual merge to be done
+   */
+  public def boolean launchSvnMerge(String mergeUrl) {
+    def boolean globalStatus = true
+
+    // reset workspace
+    resetWorkspace()
+
+    // retrieve all available revisions
+    def revisions = retrieveAvailableRevisionsMergeInfo(mergeUrl)
+
+    def nbRevisions = revisions.size()
+
+    println 'Merging ' + nbRevisions + ' revisions ...'
+
+    def validRevisions = []
+
+    for (int i = 0; i < nbRevisions; i++) {
+      def revision = revisions[i]
+      println ' Handling revision ' + revision + ' ...'
+      def comment = retrieveCommentFromRevisionWithLog(mergeUrl, revision)
+
+      // verify on comment that revision should not be blocked
+      if (shouldRevisionBeBlocked(comment)) {
+        println '  Blocking revision ' + revision + '\' ...'
+        // block revision
+        def status = svnMergeBlock(mergeUrl, revision)
+        if (!status) {
+          throw new RuntimeException('Blocking revision ' + revision + ' failed !')
+        }
+
+        if (!dryRun) {
+          println '  Committing block revision ' + revision + ' ...'
+          status = svnCommitMergeBlock(revision)
+          if (!status) {
+            throw new RuntimeException('Commiting block revision ' + revision + ' failed !')
+          }
+        } else {
+          println '  [DRY RUN SIMULATION] - Committing block revision ' + revision + ' ...'
+        }
+
+        svnUpdate()
+        println '  Revision ' + revision + ' blocked'
+      } else {
+        // verify merge has no conflict with the current revision and previous ones
+        def subRevisions = []
+        subRevisions.addAll(validRevisions)
+        subRevisions.add(revision)
+
+        svnMergeMerge(mergeUrl, subRevisions)
+
+        def hasConflicts = hasWorkspaceConflicts()
+
+        // in any case, revert changes, cleanup workspace
+        resetWorkspace()
+
+        if (hasConflicts) {
+          // globalStatus is set to false, this means manual merge needs to be done
+          globalStatus = false
+
+          if (!mergeEager) {
+            println '  Revision ' + revision + ' has conflict, merging only previous revisions ...'
+            // revision has conflict, stop merge
+            break;
+          } else {
+            println '  Revision ' + revision + ' has conflict, continue merging ...'
+          }
+        } else {
+          if (mergeOneByOne) {
+            svnMergeAndCommit(mergeUrl, revision)
+          } else {
+            println '  Revision ' + revision + ' has no conflict'
+            // add current revision to revisions to be merged
+            validRevisions.add(revision);
+          }
+        }
+      }
+    }
+
+
+
+    if (!mergeOneByOne) {
+      // reset workspace before real merge
+      resetWorkspace()
+      if (!validRevisions.isEmpty()) {
+
+        // merge all valid revisions
+
+        svnMergeAndCommit(mergeUrl, validRevisions)
       } else {
         println 'No valid revision to merge'
       }
@@ -143,20 +252,39 @@ public class SvnMergeTool {
   }
 
 
-  protected def void mergeAndCommit(String mergeUrl, String revisionsList) {
-    def status = svnMergeMerge(mergeUrl, revisionsList)
+  protected def void svnmergeAndCommit(String mergeUrl, String revisionsList) {
+    def status = svnmergeMerge(mergeUrl, revisionsList)
     if (!status) {
       throw new RuntimeException('Merging valid revisions (' + revisionsList + ') failed !')
     }
 
     if (!dryRun) {
       println 'Committing merged revisions (' + revisionsList + ') ...'
-      status = svnCommitMerge()
+      status = svnCommitSvnmerge()
       if (!status) {
         throw new RuntimeException('Committing valid revisions merge (' + revisionsList + ') failed !')
       }
     } else {
       println '[DRY RUN SIMULATION] - Committing merged revisions (' + revisionsList + ') ...'
+    }
+  }
+
+  protected def void svnMergeAndCommit(String mergeUrl, List<String> revisionsList) {
+
+    def revisionsListLabel = buildRevisionsList(revisionsList)
+    def status = svnMergeMerge(mergeUrl, revisionsList)
+    if (!status) {
+      throw new RuntimeException('Merging valid revisions (' + revisionsListLabel + ') failed !')
+    }
+
+    if (!dryRun) {
+      println 'Committing merged revisions (' + revisionsListLabel + ') ...'
+      status = svnCommitMergeMerge(revisionsListLabel)
+      if (!status) {
+        throw new RuntimeException('Committing valid revisions merge (' + revisionsListLabel + ') failed !')
+      }
+    } else {
+      println '[DRY RUN SIMULATION] - Committing merged revisions (' + revisionsListLabel + ') ...'
     }
   }
 
@@ -249,8 +377,29 @@ public class SvnMergeTool {
     return revisions
   }
 
+  protected def String[] retrieveAvailableRevisionsMergeInfo(String mergeUrl) {
+    def process = executeCommand('svn mergeinfo --show-revs eligible ' + mergeUrl + ' .')
+    def log = process.in.text
+
+    def revisions = []
+    log.eachLine() {it ->
+      revisions.add(it.replace('r', ''));
+    }
+
+    return revisions
+  }
+
   protected def String retrieveCommentFromRevision(String mergeUrl, String revision) {
     def process = executeCommand('svnmerge avail -l -r ' + revision + ' -S ' + mergeUrl)
+    def log = process.in.text
+
+    def comment = log.trim()
+    return comment
+  }
+
+
+  protected def String retrieveCommentFromRevisionWithLog(String mergeUrl, String revision) {
+    def process = executeCommand('svn log -r ' + revision + ' ' + mergeUrl)
     def log = process.in.text
 
     def comment = log.trim()
@@ -303,7 +452,7 @@ public class SvnMergeTool {
 
     if (!dryRun) {
       println '  Committing merge initialization ...'
-      status = svnCommitMerge()
+      status = svnCommitSvnmerge()
       if (!status) {
         throw new RuntimeException('Commiting merge initialization to \'' + mergeUrl + '\' failed !')
       }
@@ -315,12 +464,29 @@ public class SvnMergeTool {
     return true
   }
 
-  protected def boolean svnMergeBlock(String mergeUrl, String revision) {
+  protected def boolean svnmergeBlock(String mergeUrl, String revision) {
     return executeCommandWithStatus('svnmerge block -r ' + revision + ' -S ' + mergeUrl)
   }
 
-  protected def boolean svnMergeMerge(String mergeUrl, String revisions) {
+  protected def boolean svnMergeBlock(String mergeUrl, String revision) {
+    return executeCommandWithStatus('svn merge --accept postpone --record-only -c ' + revision + ' ' + mergeUrl + ' .')
+  }
+
+  protected def boolean svnmergeMerge(String mergeUrl, String revisions) {
     return executeCommandWithStatus('svnmerge merge -r ' + revisions + ' -S ' + mergeUrl)
+  }
+
+  protected def boolean svnMergeMerge(String mergeUrl, List<String> revisions) {
+    boolean status = true
+    for (String revision: revisions) {
+      String command = 'svn --accept postpone merge -c ' + revision + ' ' + mergeUrl + ' .'
+      status = executeCommandWithStatus(command)
+      if (!status) {
+        println ' Executing ' + command + ' failed !'
+        return false
+      }
+    }
+    return true
   }
 
   protected def boolean svnUpdate() {
@@ -331,8 +497,20 @@ public class SvnMergeTool {
     return executeCommand('svn status')
   }
 
-  protected def boolean svnCommitMerge() {
+  protected def boolean svnCommitSvnmerge() {
     return svnCommit('-F svnmerge-commit-message.txt')
+  }
+
+  protected def boolean svnCommitMerge(String message) {
+    return svnCommit('-m "' + message + '" .')
+  }
+
+  protected def boolean svnCommitMergeBlock(String revisions) {
+    return svnCommitMerge('Block revision : ' + revisions)
+  }
+
+  protected def boolean svnCommitMergeMerge(String revisions) {
+    return svnCommitMerge('Merge revision : ' + revisions)
   }
 
   protected def boolean svnCommit(String options) {
@@ -349,28 +527,58 @@ public class SvnMergeTool {
 
   protected def executeCommandWithStatus(String commandLabel) {
     def process = executeCommand(commandLabel)
+    if (verbose) {
+      def output = process.in.text
+      if (output != null && output.trim() != '') {
+        def debugOuput = ''
+        output.trim().eachLine() {it ->
+          debugOuput += '[DEBUG] ' + it + '\n'
+        }
+        println '[DEBUG] BEGIN command output :'
+        print debugOuput
+        println '[DEBUG] END command output'
+      }
+      def errOutput = process.errorStream.text
+      if (errOutput != null && errOutput.trim() != '') {
+        def errDebugOuput = ''
+        errOutput.trim().eachLine() {it ->
+          errDebugOuput += '[DEBUG][ERROR] ' + it + '\n'
+        }
+        println '[DEBUG] BEGIN ERROR command output :'
+        print errDebugOuput
+        println '[DEBUG] END ERROR command output'
+      }
+    }
     return (process.exitValue() == 0)
   }
 
   protected def executeCommand(String commandLabel) {
+    if (verbose) {
+      println '[DEBUG] executing command \'' + commandLabel + '\''
+    }
     def process = commandLabel.execute()
     process.waitFor()
+    if (verbose) {
+      println '[DEBUG] exit value : ' + process.exitValue()
+    }
     return process
   }
 
   public static void main(String[] args) {
     def cli = new CliBuilder(usage: 'Launch merge')
+    cli.o(longOpt: 'old', 'old and DEPRECATED svnmerge version')
     cli.h(longOpt: 'help', 'prints this message')
-    cli.i(longOpt: 'init', 'only init the merge, then stop')
-    cli.n(longOpt: 'no-init', 'do not init the merge. Fails if no initialization has been done for the specified url')
+    cli.i(longOpt: 'init', '[DEPRECATED] only init the merge, then stop. Only available with -o')
+    cli.n(longOpt: 'no-init', '[DEPRECATED] do not init the merge. Fails if no initialization has been done for the specified url. Only available with -o')
     cli.b(longOpt: 'bidirectional', 'bidirectional merge. Used to ignore reflected revisions')
     cli.u(longOpt: 'url', args: 1, 'repository url to merge [REQUIRED]')
     cli.d(longOpt: 'dryRun', 'do not commit any modification')
     cli.s(longOpt: 'single', 'Merge one revision by one. One merge, one commit, one merge, one commit, ...')
     cli.p(longOpt: 'patterns', args: 1, 'patterns contained in comments of revisions not to be merged, separated by \',\'')
     cli.P(longOpt: 'patternsFile', args: 1, optionalArg: true, 'patterns file, default is \'patterns.txt\'')
-    cli.r(longOpt: 'revisionInit', args: 1, 'initial revision for merge initialization')
+    cli.r(longOpt: 'revisionInit', args: 1, '[DEPRECATED] initial revision for merge initialization')
     cli.e(longOpt: 'eager', 'eager merge: merge every revision that can be merged without conflict even if it follows a conflict')
+    cli.v(longOpt: 'verbose', 'verbose mode')
     def options = cli.parse(args)
 
     if (!options || options.h || !options.u) {
@@ -382,6 +590,8 @@ public class SvnMergeTool {
     def boolean mergeOneByOne = options.s
     def boolean blockInitialization = options.n
     def boolean isMergeEager = options.e
+    def boolean deprecatedSvnmerge = options.o
+    def boolean isVerbose = options.v
     def String mergeUrl = new String(options.u.value)
     def String revisionInit = null
     if (options.r) {
@@ -390,25 +600,31 @@ public class SvnMergeTool {
 
     List<String> additionalPatterns = extractAdditionalPatterns(options)
 
-    SvnMergeTool tool = new SvnMergeTool(dryRun, additionalPatterns, mergeOneByOne, isMergeEager)
-
-    // check svnmerge init
-    def boolean isMergeInitialized = tool.checkMergeIsInitialized(mergeUrl)
-
-    // perform svnmerge init
-    if (!isMergeInitialized) {
-      if (blockInitialization) {
-        println 'Merge is not initialized and option -n is active -> Exiting ...'
-        System.exit(1)
-      }
-      println 'Merge is not yet initialized to \'' + mergeUrl + '\''
-      tool.initMerge(mergeUrl, revisionInit)
-    } else {
-      println 'Merge is already initialized'
-    }
+    SvnMergeTool tool = new SvnMergeTool(dryRun, additionalPatterns, mergeOneByOne, isMergeEager, isVerbose)
 
     def boolean status = false
-    status = tool.launch(mergeUrl)
+    if (deprecatedSvnmerge) {
+      // check svnmerge init
+      def boolean isMergeInitialized = tool.checkMergeIsInitialized(mergeUrl)
+
+      // perform svnmerge init
+      if (!isMergeInitialized) {
+        if (blockInitialization) {
+          println 'Merge is not initialized and option -n is active -> Exiting ...'
+          System.exit(1)
+        }
+        println 'Merge is not yet initialized to \'' + mergeUrl + '\''
+        tool.initMerge(mergeUrl, revisionInit)
+      } else {
+        println 'Merge is already initialized'
+      }
+
+      status = tool.launchSvnmerge(mergeUrl)
+    } else {
+
+      status = tool.launchSvnMerge(mergeUrl)
+    }
+
 
     System.exit(status ? 0 : 1)
   }
