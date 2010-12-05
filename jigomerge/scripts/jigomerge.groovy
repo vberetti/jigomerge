@@ -16,7 +16,7 @@ public class SvnMergeTool {
 
   def static final List<String> DEFAULT_NO_MERGE_COMMENT_PATTERNS = ['maven-release-plugin', 'NOMERGE', 'NO-MERGE', 'Initialized merge tracking via "svnmerge" with revisions']
 
-  /** parameter dryRun - should the script commit the changes or not       */
+  /** parameter dryRun - should the script commit the changes or not           */
   def boolean dryRun = true
   def List<String> noMergeCommentPatterns = []
   def boolean mergeOneByOne = false
@@ -182,7 +182,7 @@ public class SvnMergeTool {
 
         if (!dryRun) {
           println '  Committing block revision ' + revision + ' ...'
-          status = svnCommitMergeBlock(revision)
+          status = svnCommitMergeBlock(revision, comment)
           if (!status) {
             throw new RuntimeException('Commiting block revision ' + revision + ' failed !')
           }
@@ -282,7 +282,18 @@ public class SvnMergeTool {
 
     if (!dryRun) {
       println 'Committing merged revisions (' + revisionsListLabel + ') ...'
-      status = svnCommitMergeMerge(revisionsListLabel)
+      def commentFile = new File('jigomerge-comments.txt')
+      commentFile << 'Merged revisions : ' + revisionsListLabel + '\n'
+      for (String revision in revisionsList) {
+        def revisionComment = retrieveCommentFromRevisionWithLog(mergeUrl, revision)
+        commentFile << 'Revision  #' + revision + '\n'
+        commentFile << '----------------------\n'
+        commentFile << revisionComment + '\n'
+        commentFile << '----------------------\n'
+        commentFile << '\n'
+      }
+      status = svnCommitMergeMerge(commentFile)
+      commentFile.delete()
       if (!status) {
         throw new RuntimeException('Committing valid revisions merge (' + revisionsListLabel + ') failed !')
       }
@@ -544,12 +555,17 @@ public class SvnMergeTool {
     return svnCommit('-m "' + message + '" .')
   }
 
-  protected def boolean svnCommitMergeBlock(String revisions) {
-    return svnCommitMerge('Block revision : ' + revisions)
+  protected def boolean svnCommitMergeBlock(String revision, String comment) {
+    def commentFile = new File('jigomerge-comments.txt')
+    commentFile << 'Block revision #' + revision + '\n'
+    commentFile << 'Initial message was : ' + comment
+    def status = svnCommit('-F ' + commentFile.path + ' .')
+    commentFile.delete()
+    return status
   }
 
-  protected def boolean svnCommitMergeMerge(String revisions) {
-    return svnCommitMerge('Merge revision : ' + revisions)
+  protected def boolean svnCommitMergeMerge(File commentFile) {
+    return svnCommit('-F ' + commentFile.path + ' .')
   }
 
   protected def boolean svnCommit(String options) {
