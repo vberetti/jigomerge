@@ -16,7 +16,7 @@ public class SvnMergeTool {
 
   def static final List<String> DEFAULT_NO_MERGE_COMMENT_PATTERNS = ['maven-release-plugin', 'NOMERGE', 'NO-MERGE', 'Initialized merge tracking via "svnmerge" with revisions']
 
-  /** parameter dryRun - should the script commit the changes or not     */
+  /** parameter dryRun - should the script commit the changes or not       */
   def boolean dryRun = true
   def List<String> noMergeCommentPatterns = []
   def boolean mergeOneByOne = false
@@ -36,6 +36,7 @@ public class SvnMergeTool {
   }
 
   /**
+   * DEPRECATED
    * launch the merge <br>
    * return boolean - true if everything went fine or false if manual merge to be done
    */
@@ -251,7 +252,9 @@ public class SvnMergeTool {
     return globalStatus
   }
 
-
+  /**
+   * DEPRECATED
+   */
   protected def void svnmergeAndCommit(String mergeUrl, String revisionsList) {
     def status = svnmergeMerge(mergeUrl, revisionsList)
     if (!status) {
@@ -308,23 +311,29 @@ public class SvnMergeTool {
   }
 
   protected def List<File> listUnversionnedFiles() {
-    def process = svnStatus()
-    def statusLog = process.in.text
+    def process = svnStatus('--xml')
+    def statusXmlLog = process.in.text
     def files = []
-    statusLog.eachLine() {line ->
-      if (line.contains('?    ')) {
-        files.add(new File(line.substring(1, line.length()).trim()))
-      }
+
+    def statusParser = new XmlSlurper().parseText(statusXmlLog)
+    def unversionned = statusParser.target.entry.findAll() {it -> it."wc-status".@item.text() == 'unversioned'}
+
+    unversionned.each() {it ->
+      def path = it.@path.text()
+      files.add(new File(path))
     }
 
     return files
   }
 
   protected def boolean hasWorkspaceConflicts() {
-    def process = svnStatus()
-    def statusLog = process.in.text
+    def process = svnStatus('--xml')
+    def statusXmlLog = process.in.text
 
-    return statusLog.contains('C    ') || statusLog.contains('   C ')
+    def statusParser = new XmlSlurper().parseText(statusXmlLog)
+    def conflicts = statusParser.target.entry.findAll() {it -> it."wc-status".@item.text() == 'conflicted' || it."wc-status".@props.text() == 'conflicted' }
+
+    return conflicts.size() > 0
   }
 
   protected def String buildRevisionsList(List<String> revisions) {
@@ -351,6 +360,9 @@ public class SvnMergeTool {
     return block
   }
 
+  /**
+   * DEPRECATED
+   */
   protected def String[] retrieveAvailableRevisions(String mergeUrl) {
     def process = executeCommand('svnmerge avail -S ' + mergeUrl)
     def log = process.in.text
@@ -389,6 +401,9 @@ public class SvnMergeTool {
     return revisions
   }
 
+  /**
+   * DEPRECATED
+   */
   protected def String retrieveCommentFromRevision(String mergeUrl, String revision) {
     def process = executeCommand('svnmerge avail -l -r ' + revision + ' -S ' + mergeUrl)
     def log = process.in.text
@@ -399,13 +414,18 @@ public class SvnMergeTool {
 
 
   protected def String retrieveCommentFromRevisionWithLog(String mergeUrl, String revision) {
-    def process = executeCommand('svn log -r ' + revision + ' ' + mergeUrl)
-    def log = process.in.text
+    def process = executeCommand('svn log --xml -r ' + revision + ' ' + mergeUrl)
+    def logXml = process.in.text
 
-    def comment = log.trim()
+    def log = new XmlSlurper().parseText(logXml)
+    def comment = log.logentry.msg.text()
+
     return comment
   }
 
+  /**
+   * DEPRECATED
+   */
   protected def String retrieveRepositoryRoot() {
     def process = executeCommand('svn info .')
     def log = process.in.text
@@ -415,6 +435,9 @@ public class SvnMergeTool {
     return matcher[0][1].trim()
   }
 
+  /**
+   * DEPRECATED
+   */
   public def boolean checkMergeIsInitialized(String mergeUrl) {
     def String repositoryRoot = retrieveRepositoryRoot()
 
@@ -435,6 +458,9 @@ public class SvnMergeTool {
     return initialized
   }
 
+  /**
+   * DEPRECATED
+   */
   public def initMerge(String mergeUrl, String revision) {
 
     println 'Initializing merge to \'' + mergeUrl + '\' ...'
@@ -464,6 +490,9 @@ public class SvnMergeTool {
     return true
   }
 
+  /**
+   * DEPRECATED
+   */
   protected def boolean svnmergeBlock(String mergeUrl, String revision) {
     return executeCommandWithStatus('svnmerge block -r ' + revision + ' -S ' + mergeUrl)
   }
@@ -472,6 +501,9 @@ public class SvnMergeTool {
     return executeCommandWithStatus('svn merge --accept postpone --record-only -c ' + revision + ' ' + mergeUrl + ' .')
   }
 
+  /**
+   * DEPRECATED
+   */
   protected def boolean svnmergeMerge(String mergeUrl, String revisions) {
     return executeCommandWithStatus('svnmerge merge -r ' + revisions + ' -S ' + mergeUrl)
   }
@@ -494,9 +526,16 @@ public class SvnMergeTool {
   }
 
   protected def svnStatus() {
-    return executeCommand('svn status')
+    return svnStatus('')
   }
 
+  protected def svnStatus(String options) {
+    return executeCommand('svn status ' + options)
+  }
+
+  /**
+   * DEPRECATED
+   */
   protected def boolean svnCommitSvnmerge() {
     return svnCommit('-F svnmerge-commit-message.txt')
   }
