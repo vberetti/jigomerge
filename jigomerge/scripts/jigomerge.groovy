@@ -342,7 +342,7 @@ public class SvnMergeTool {
     def statusXmlLog = process.in.text
 
     def statusParser = new XmlSlurper().parseText(statusXmlLog)
-    def conflicts = statusParser.target.entry.findAll() {it -> it."wc-status".@item.text() == 'conflicted' || it."wc-status".@props.text() == 'conflicted' }
+    def conflicts = statusParser.target.entry.findAll() {it -> it."wc-status".@item.text() == 'conflicted' || it."wc-status".@props.text() == 'conflicted' || it."wc-status".@"tree-conflicted".text() == "true" }
 
     return conflicts.size() > 0
   }
