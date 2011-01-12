@@ -395,15 +395,15 @@ public class SvnMergeTool {
     def cli = new CliBuilder(usage: 'Launch merge')
     cli.h(longOpt: 'help', 'prints this message')
     cli.b(longOpt: 'bidirectional', 'bidirectional merge. Used to ignore reflected revisions')
-    cli.s(longOpt: 'url', args: 1, 'source repository url to merge [REQUIRED]')
+    cli.S(longOpt: 'url', args: 1, 'source repository url to merge [REQUIRED]')
     cli.d(longOpt: 'dryRun', 'do not commit any modification')
     cli.s(longOpt: 'single', 'Merge one revision by one. One merge, one commit, one merge, one commit, ...')
     cli.a(longOpt: 'patterns', args: 1, 'patterns contained in comments of revisions not to be merged, separated by \',\'')
     cli.A(longOpt: 'patternsFile', args: 1, optionalArg: true, 'patterns file, default is \'patterns.txt\'')
     cli.r(longOpt: 'revisionInit', args: 1, '[DEPRECATED] initial revision for merge initialization')
     cli.e(longOpt: 'eager', 'eager merge: merge every revision that can be merged without conflict even if it follows a conflict')
-    cli.u(longOpt: 'username', 'username to use in svn commands')
-    cli.p(longOpt: 'password', 'password to use in svn commands')
+    cli.u(longOpt: 'username', args: 1, 'username to use in svn commands')
+    cli.p(longOpt: 'password', args: 1, 'password to use in svn commands')
     cli.v(longOpt: 'verbose', 'verbose mode')
     def options = cli.parse(args)
 
@@ -416,7 +416,7 @@ public class SvnMergeTool {
     def boolean mergeOneByOne = options.s
     def boolean isMergeEager = options.e
     def boolean isVerbose = options.v
-    def String mergeUrl = new String(options.s.value)
+    def String mergeUrl = new String(options.S.value)
     def String revisionInit = null
     if (options.r) {
       revisionInit = new String(options.r.value)
@@ -426,9 +426,9 @@ public class SvnMergeTool {
     String username = null
     String password = null
     if (options.u) {
-      username = options.u.value
+      username = new String(options.u.value)
       if (options.p) {
-        password = options.p.value
+        password = new String(options.p.value)
       }
     }
 
