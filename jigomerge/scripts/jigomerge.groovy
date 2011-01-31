@@ -400,14 +400,13 @@ public class SvnMergeTool {
     cli.s(longOpt: 'single', 'Merge one revision by one. One merge, one commit, one merge, one commit, ...')
     cli.a(longOpt: 'patterns', args: 1, 'patterns contained in comments of revisions not to be merged, separated by \',\'')
     cli.A(longOpt: 'patternsFile', args: 1, optionalArg: true, 'patterns file, default is \'patterns.txt\'')
-    cli.r(longOpt: 'revisionInit', args: 1, '[DEPRECATED] initial revision for merge initialization')
     cli.e(longOpt: 'eager', 'eager merge: merge every revision that can be merged without conflict even if it follows a conflict')
     cli.u(longOpt: 'username', args: 1, 'username to use in svn commands')
     cli.p(longOpt: 'password', args: 1, 'password to use in svn commands')
     cli.v(longOpt: 'verbose', 'verbose mode')
     def options = cli.parse(args)
 
-    if (!options || options.h || !options.u) {
+    if (!options || options.h || !options.S) {
       cli.usage()
       return
     }
@@ -417,10 +416,6 @@ public class SvnMergeTool {
     def boolean isMergeEager = options.e
     def boolean isVerbose = options.v
     def String mergeUrl = new String(options.S.value)
-    def String revisionInit = null
-    if (options.r) {
-      revisionInit = new String(options.r.value)
-    }
 
     // authentication
     String username = null
