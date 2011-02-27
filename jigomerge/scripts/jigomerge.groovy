@@ -47,7 +47,7 @@ public class SvnMergeTool {
    * launch the merge <br>
    * return boolean - true if everything went fine or false if manual merge to be done
    */
-  public def boolean launchSvnMerge(String mergeUrl) {
+  public def boolean launchSvnMerge(String mergeUrl, String validationScript) {
     def boolean globalStatus = true
 
     // reset workspace
@@ -114,7 +114,7 @@ public class SvnMergeTool {
           }
         } else {
           if (mergeOneByOne) {
-            svnMergeAndCommit(mergeUrl, revision)
+            svnMergeAndCommit(mergeUrl, revision, validationScript)
           } else {
             println '  Revision ' + revision + ' has no conflict'
             // add current revision to revisions to be merged
@@ -133,7 +133,7 @@ public class SvnMergeTool {
 
         // merge all valid revisions
 
-        svnMergeAndCommit(mergeUrl, validRevisions)
+        svnMergeAndCommit(mergeUrl, validRevisions, validationScript)
       } else {
         println 'No valid revision to merge'
       }
@@ -148,12 +148,17 @@ public class SvnMergeTool {
     return globalStatus
   }
 
-  protected def void svnMergeAndCommit(String mergeUrl, List<String> revisionsList) {
+  protected def void svnMergeAndCommit(String mergeUrl, List<String> revisionsList, String validationScript) {
 
     def revisionsListLabel = buildRevisionsList(revisionsList)
     def status = svnMergeMerge(mergeUrl, revisionsList)
     if (!status) {
       throw new RuntimeException('Merging valid revisions (' + revisionsListLabel + ') failed !')
+    }
+
+    if(validationScript != null){
+       status = executeCommandWithStatus(validationScript);
+       throw new RuntimeException('Validation using ' + validationScript + ' failed !')
     }
 
     if (!dryRun) {
@@ -403,6 +408,7 @@ public class SvnMergeTool {
     cli.e(longOpt: 'eager', 'eager merge: merge every revision that can be merged without conflict even if it follows a conflict')
     cli.u(longOpt: 'username', args: 1, 'username to use in svn commands')
     cli.p(longOpt: 'password', args: 1, 'password to use in svn commands')
+    cli.V(longOpt: 'validation', args: 1, 'validation script');
     cli.v(longOpt: 'verbose', 'verbose mode')
     def options = cli.parse(args)
 
@@ -427,13 +433,18 @@ public class SvnMergeTool {
       }
     }
 
+    def String validationScript = null
+    if(options.V){
+      validationScript = new String(options.V.value)
+    }
+
     List<String> additionalPatterns = extractAdditionalPatterns(options)
 
     SvnMergeTool tool = new SvnMergeTool(dryRun, additionalPatterns, mergeOneByOne, isMergeEager, isVerbose, username, password)
 
     def boolean status = false
 
-    status = tool.launchSvnMerge(mergeUrl)
+    status = tool.launchSvnMerge(mergeUrl, validationScript)
 
     System.exit(status ? 0 : 1)
   }
