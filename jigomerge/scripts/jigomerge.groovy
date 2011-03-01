@@ -158,7 +158,9 @@ public class SvnMergeTool {
 
     if(validationScript != null){
        status = executeCommandWithStatus(validationScript);
-       throw new RuntimeException('Validation using ' + validationScript + ' failed !')
+       if(!status){
+	throw new RuntimeException('Validation using ' + validationScript + ' failed !')
+       }
     }
 
     if (!dryRun) {
@@ -358,7 +360,7 @@ public class SvnMergeTool {
   }
 
   protected def executeCommandWithStatus(String commandLabel) {
-    def process = executeCommand(commandLabel)
+    def process = executeCommand(commandLabel, false)
     if (verbose) {
       def output = process.in.text
       if (output != null && output.trim() != '') {
@@ -381,17 +383,29 @@ public class SvnMergeTool {
         println '[DEBUG] END ERROR command output'
       }
     }
+    process.waitFor()
+    if (verbose) {
+      println '[DEBUG] exit value : ' + process.exitValue()
+    }
+ 
     return (process.exitValue() == 0)
   }
+  
+  protected def executeCommand(String commandLabel){
+    executeCommand(commandLabel, true)
+  }
 
-  protected def executeCommand(String commandLabel) {
+  protected def executeCommand(String commandLabel, boolean wait) {
     if (verbose) {
       println '[DEBUG] executing command \'' + commandLabel + '\''
     }
     def process = commandLabel.execute()
-    process.waitFor()
-    if (verbose) {
-      println '[DEBUG] exit value : ' + process.exitValue()
+    
+    if(wait){
+      process.waitFor()
+      if (verbose) {
+        println '[DEBUG] exit value : ' + process.exitValue()
+      }
     }
     return process
   }
