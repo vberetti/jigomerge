@@ -26,7 +26,7 @@ public class SvnMergeTool {
   def String username = null
   def String password = null
 
-  SvnMergeTool(boolean dryRun, List<String> noMergeCommentPatterns, boolean mergeOneByOne, boolean mergeEager, boolean verbose, String username, String password) {
+  public SvnMergeTool(boolean dryRun, List<String> noMergeCommentPatterns, boolean mergeOneByOne, boolean mergeEager, boolean verbose, String username, String password) {
     this.dryRun = dryRun
     if (noMergeCommentPatterns.isEmpty()) {
       this.noMergeCommentPatterns = DEFAULT_NO_MERGE_COMMENT_PATTERNS
@@ -47,14 +47,14 @@ public class SvnMergeTool {
    * launch the merge <br>
    * return boolean - true if everything went fine or false if manual merge to be done
    */
-  public def boolean launchSvnMerge(String mergeUrl, String validationScript) {
+  public def boolean launchSvnMerge(String mergeUrl, String validationScript, String workingDirectory) {
     def boolean globalStatus = true
 
     // reset workspace
-    resetWorkspace()
+    resetWorkspace(workingDirectory)
 
     // retrieve all available revisions
-    def revisions = retrieveAvailableRevisionsMergeInfo(mergeUrl)
+    def revisions = retrieveAvailableRevisionsMergeInfo(mergeUrl, workingDirectory)
 
     def nbRevisions = revisions.size()
 
@@ -65,20 +65,20 @@ public class SvnMergeTool {
     for (int i = 0; i < nbRevisions; i++) {
       def revision = revisions[i]
       println ' Handling revision ' + revision + ' ...'
-      def comment = retrieveCommentFromRevisionWithLog(mergeUrl, revision)
+      def comment = retrieveCommentFromRevisionWithLog(mergeUrl, revision, workingDirectory)
 
       // verify on comment that revision should not be blocked
       if (shouldRevisionBeBlocked(comment)) {
         println '  Blocking revision ' + revision + '\' ...'
         // block revision
-        def status = svnMergeBlock(mergeUrl, revision)
+        def status = svnMergeBlock(mergeUrl, revision, workingDirectory)
         if (!status) {
           throw new RuntimeException('Blocking revision ' + revision + ' failed !')
         }
 
         if (!dryRun) {
           println '  Committing block revision ' + revision + ' ...'
-          status = svnCommitMergeBlock(revision, comment)
+          status = svnCommitMergeBlock(revision, comment, workingDirectory)
           if (!status) {
             throw new RuntimeException('Commiting block revision ' + revision + ' failed !')
           }
@@ -86,7 +86,7 @@ public class SvnMergeTool {
           println '  [DRY RUN SIMULATION] - Committing block revision ' + revision + ' ...'
         }
 
-        svnUpdate()
+        svnUpdate(workingDirectory)
         println '  Revision ' + revision + ' blocked'
       } else {
         // verify merge has no conflict with the current revision and previous ones
@@ -94,12 +94,12 @@ public class SvnMergeTool {
         subRevisions.addAll(validRevisions)
         subRevisions.add(revision)
 
-        svnMergeMerge(mergeUrl, subRevisions)
+        svnMergeMerge(mergeUrl, subRevisions, workingDirectory)
 
-        def hasConflicts = hasWorkspaceConflicts()
+        def hasConflicts = hasWorkspaceConflicts(workingDirectory)
 
         // in any case, revert changes, cleanup workspace
-        resetWorkspace()
+        resetWorkspace(workingDirectory)
 
         if (hasConflicts) {
           // globalStatus is set to false, this means manual merge needs to be done
@@ -108,13 +108,14 @@ public class SvnMergeTool {
           if (!mergeEager) {
             println '  Revision ' + revision + ' has conflict, merging only previous revisions ...'
             // revision has conflict, stop merge
+            // create file with commands to ease conflict resolution
             break;
           } else {
             println '  Revision ' + revision + ' has conflict, continue merging ...'
           }
         } else {
           if (mergeOneByOne) {
-            svnMergeAndCommit(mergeUrl, revision, validationScript)
+            svnMergeAndCommit(mergeUrl, revision, validationScript, workingDirectory)
           } else {
             println '  Revision ' + revision + ' has no conflict'
             // add current revision to revisions to be merged
@@ -133,7 +134,7 @@ public class SvnMergeTool {
 
         // merge all valid revisions
 
-        svnMergeAndCommit(mergeUrl, validRevisions, validationScript)
+        svnMergeAndCommit(mergeUrl, validRevisions, validationScript, workingDirectory)
       } else {
         println 'No valid revision to merge'
       }
@@ -148,7 +149,7 @@ public class SvnMergeTool {
     return globalStatus
   }
 
-  protected def void svnMergeAndCommit(String mergeUrl, List<String> revisionsList, String validationScript) {
+  protected def void svnMergeAndCommit(String mergeUrl, List<String> revisionsList, String validationScript, String workingDirectory) {
 
     def revisionsListLabel = buildRevisionsList(revisionsList)
     def status = svnMergeMerge(mergeUrl, revisionsList)
@@ -168,14 +169,14 @@ public class SvnMergeTool {
       def commentFile = new File('jigomerge-comments.txt')
       commentFile << 'Merged revisions : ' + revisionsListLabel + '\n'
       for (String revision in revisionsList) {
-        def revisionComment = retrieveCommentFromRevisionWithLog(mergeUrl, revision)
+        def revisionComment = retrieveCommentFromRevisionWithLog(mergeUrl, revision, workingDirectory)
         commentFile << 'Revision  #' + revision + '\n'
         commentFile << '----------------------\n'
         commentFile << revisionComment + '\n'
         commentFile << '----------------------\n'
         commentFile << '\n'
       }
-      status = svnCommitMergeMerge(commentFile)
+      status = svnCommitMergeMerge(commentFile, workingDirectory)
       commentFile.delete()
       if (!status) {
         throw new RuntimeException('Committing valid revisions merge (' + revisionsListLabel + ') failed !')
@@ -185,10 +186,10 @@ public class SvnMergeTool {
     }
   }
 
-  protected def void resetWorkspace() {
+  protected def void resetWorkspace(String workingDirectory) {
     def status = true
-    status &= svnRevertAllRecursively()
-    status &= svnUpdate()
+    status &= svnRevertAllRecursively(workingDirectory)
+    status &= svnUpdate(workingDirectory)
 
     // delete unversionned files
     listUnversionnedFiles().each() {file ->
@@ -204,8 +205,8 @@ public class SvnMergeTool {
     }
   }
 
-  protected def List<File> listUnversionnedFiles() {
-    def process = svnStatus('--xml')
+  protected def List<File> listUnversionnedFiles(String workingDirectory) {
+    def process = svnStatus('--xml ' + workingDirectory)
     def statusXmlLog = process.in.text
     def files = []
 
@@ -220,8 +221,8 @@ public class SvnMergeTool {
     return files
   }
 
-  protected def boolean hasWorkspaceConflicts() {
-    def process = svnStatus('--xml')
+  protected def boolean hasWorkspaceConflicts(String workingDirectory) {
+    def process = svnStatus('--xml ' + workingDirectory)
     def statusXmlLog = process.in.text
 
     def statusParser = new XmlSlurper().parseText(statusXmlLog)
@@ -254,8 +255,8 @@ public class SvnMergeTool {
     return block
   }
 
-  protected def String[] retrieveAvailableRevisionsMergeInfo(String mergeUrl) {
-    def process = executeSvnCommand('mergeinfo --show-revs eligible ' + mergeUrl + ' .')
+  protected def String[] retrieveAvailableRevisionsMergeInfo(String mergeUrl, String workingDirectory) {
+    def process = executeSvnCommand('mergeinfo --show-revs eligible ' + mergeUrl + ' ' + workingDirectory)
     def log = process.in.text
 
     def revisions = []
@@ -267,8 +268,8 @@ public class SvnMergeTool {
   }
 
 
-  protected def String retrieveCommentFromRevisionWithLog(String mergeUrl, String revision) {
-    def process = executeSvnCommand('log --xml -r ' + revision + ' ' + mergeUrl)
+  protected def String retrieveCommentFromRevisionWithLog(String mergeUrl, String revision, String workingDirectory) {
+    def process = executeSvnCommand('log --xml -r ' + revision + ' ' + mergeUrl + ' ' + workingDirectory)
     def logXml = process.in.text
 
     def log = new XmlSlurper().parseText(logXml)
@@ -277,14 +278,14 @@ public class SvnMergeTool {
     return comment
   }
 
-  protected def boolean svnMergeBlock(String mergeUrl, String revision) {
-    return executeSvnCommandWithStatus('merge --accept postpone --record-only -c ' + revision + ' ' + mergeUrl + ' .')
+  protected def boolean svnMergeBlock(String mergeUrl, String revision, String workingDirectory) {
+    return executeSvnCommandWithStatus('merge --accept postpone --record-only -c ' + revision + ' ' + mergeUrl + ' ' + workingDirectory)
   }
 
-  protected def boolean svnMergeMerge(String mergeUrl, List<String> revisions) {
+  protected def boolean svnMergeMerge(String mergeUrl, List<String> revisions, String workingDirectory) {
     boolean status = true
     for (String revision: revisions) {
-      String command = '--accept postpone merge -c ' + revision + ' ' + mergeUrl + ' .'
+      String command = '--accept postpone merge -c ' + revision + ' ' + mergeUrl + ' ' + workingDirectory
       status = executeSvnCommandWithStatus(command)
       if (!status) {
         println ' Executing ' + command + ' failed !'
@@ -294,45 +295,45 @@ public class SvnMergeTool {
     return true
   }
 
-  protected def boolean svnUpdate() {
-    return executeSvnCommandWithStatus('update')
+  protected def boolean svnUpdate(String workingDirectory) {
+    return executeSvnCommandWithStatus('update ' + workingDirectory)
   }
 
-  protected def svnStatus() {
-    return svnStatus('')
+  protected def svnStatus(String workingDirectory) {
+    return svnStatus(' ' + workingDirectory)
   }
 
-  protected def svnStatus(String options) {
-    return executeCommand('svn status ' + options)
+  protected def svnStatus(String options, String workingDirectory) {
+    return executeCommand('svn status ' + options + ' ' + workingDirectory)
   }
 
-  protected def boolean svnCommitMerge(String message) {
-    return svnCommit('-m "' + message + '" .')
+  protected def boolean svnCommitMerge(String message, String workingDirectory) {
+    return svnCommit('-m "' + message + '"', workingDirectory)
   }
 
-  protected def boolean svnCommitMergeBlock(String revision, String comment) {
+  protected def boolean svnCommitMergeBlock(String revision, String comment, String workingDirectory) {
     def commentFile = new File('jigomerge-comments.txt')
     commentFile << 'Block revision #' + revision + '\n'
     commentFile << 'Initial message was : ' + comment
-    def status = svnCommit('-F ' + commentFile.path + ' .')
+    def status = svnCommit('-F ' + commentFile.path, workingDirectory)
     commentFile.delete()
     return status
   }
 
-  protected def boolean svnCommitMergeMerge(File commentFile) {
-    return svnCommit('-F ' + commentFile.path + ' .')
+  protected def boolean svnCommitMergeMerge(File commentFile, String workingDirectory) {
+    return svnCommit('-F ' + commentFile.path, workingDirectory)
   }
 
-  protected def boolean svnCommit(String options) {
-    return executeSvnCommandWithStatus('commit ' + options)
+  protected def boolean svnCommit(String options, String workingDirectory) {
+    return executeSvnCommandWithStatus('commit ' + options + ' ' + workingDirectory)
   }
 
-  protected def boolean svnRevertAllRecursively() {
-    return svnRevert('-R .')
+  protected def boolean svnRevertAllRecursively(String workingDirectory) {
+    return svnRevert('-R ', workingDirectory)
   }
 
-  protected def boolean svnRevert(String options) {
-    return executeSvnCommandWithStatus('revert ' + options)
+  protected def boolean svnRevert(String options, String workingDirectory) {
+    return executeSvnCommandWithStatus('revert ' + options + ' ' + workingDirectory)
   }
 
   protected def executeSvnCommand(String commandLabel) {
@@ -458,7 +459,7 @@ public class SvnMergeTool {
 
     def boolean status = false
 
-    status = tool.launchSvnMerge(mergeUrl, validationScript)
+    status = tool.launchSvnMerge(mergeUrl, validationScript, '.')
 
     System.exit(status ? 0 : 1)
   }
