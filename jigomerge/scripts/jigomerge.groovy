@@ -25,8 +25,9 @@ public class SvnMergeTool {
   def boolean authentication = false
   def String username = null
   def String password = null
+  def PrintStream printOut = null;
 
-  public SvnMergeTool(boolean dryRun, List<String> noMergeCommentPatterns, boolean mergeOneByOne, boolean mergeEager, boolean verbose, String username, String password) {
+  public SvnMergeTool(boolean dryRun, List<String> noMergeCommentPatterns, boolean mergeOneByOne, boolean mergeEager, boolean verbose, String username, String password, OutputStream output) {
     this.dryRun = dryRun
     if (noMergeCommentPatterns.isEmpty()) {
       this.noMergeCommentPatterns = DEFAULT_NO_MERGE_COMMENT_PATTERNS
@@ -41,6 +42,12 @@ public class SvnMergeTool {
     this.username = username
     this.password = password
     this.authentication = (username != null)
+
+    if(output != null){
+      printOut = new PrintStream(output);
+    }else{
+      printOut = System.out;
+    }
   }
 
   /**
@@ -58,18 +65,18 @@ public class SvnMergeTool {
 
     def nbRevisions = revisions.size()
 
-    println 'Merging ' + nbRevisions + ' revisions ...'
+    printOut.println 'Merging ' + nbRevisions + ' revisions ...'
 
     def validRevisions = []
 
     for (int i = 0; i < nbRevisions; i++) {
       def revision = revisions[i]
-      println ' Handling revision ' + revision + ' ...'
+      printOut.println ' Handling revision ' + revision + ' ...'
       def comment = retrieveCommentFromRevisionWithLog(mergeUrl, revision, workingDirectory)
 
       // verify on comment that revision should not be blocked
       if (shouldRevisionBeBlocked(comment)) {
-        println '  Blocking revision ' + revision + '\' ...'
+        printOut.println '  Blocking revision ' + revision + '\' ...'
         // block revision
         def status = svnMergeBlock(mergeUrl, revision, workingDirectory)
         if (!status) {
@@ -77,17 +84,17 @@ public class SvnMergeTool {
         }
 
         if (!dryRun) {
-          println '  Committing block revision ' + revision + ' ...'
+          printOut.println '  Committing block revision ' + revision + ' ...'
           status = svnCommitMergeBlock(revision, comment, workingDirectory)
           if (!status) {
             throw new RuntimeException('Commiting block revision ' + revision + ' failed !')
           }
         } else {
-          println '  [DRY RUN SIMULATION] - Committing block revision ' + revision + ' ...'
+          printOut.println '  [DRY RUN SIMULATION] - Committing block revision ' + revision + ' ...'
         }
 
         svnUpdate(workingDirectory)
-        println '  Revision ' + revision + ' blocked'
+        printOut.println '  Revision ' + revision + ' blocked'
       } else {
         // verify merge has no conflict with the current revision and previous ones
         def subRevisions = []
@@ -106,18 +113,18 @@ public class SvnMergeTool {
           globalStatus = false
 
           if (!mergeEager) {
-            println '  Revision ' + revision + ' has conflict, merging only previous revisions ...'
+            printOut.println '  Revision ' + revision + ' has conflict, merging only previous revisions ...'
             // revision has conflict, stop merge
             // create file with commands to ease conflict resolution
             break;
           } else {
-            println '  Revision ' + revision + ' has conflict, continue merging ...'
+            printOut.println '  Revision ' + revision + ' has conflict, continue merging ...'
           }
         } else {
           if (mergeOneByOne) {
             svnMergeAndCommit(mergeUrl, revision, validationScript, workingDirectory)
           } else {
-            println '  Revision ' + revision + ' has no conflict'
+            printOut.println '  Revision ' + revision + ' has no conflict'
             // add current revision to revisions to be merged
             validRevisions.add(revision);
           }
@@ -136,15 +143,15 @@ public class SvnMergeTool {
 
         svnMergeAndCommit(mergeUrl, validRevisions, validationScript, workingDirectory)
       } else {
-        println 'No valid revision to merge'
+        printOut.println 'No valid revision to merge'
       }
     }
 
     svnUpdate()
     if (!globalStatus) {
-      println 'MANUAL MERGE NEEDS TO BE DONE !'
+      printOut.println 'MANUAL MERGE NEEDS TO BE DONE !'
     }
-    println 'Merge is finished !'
+    printOut.println 'Merge is finished !'
 
     return globalStatus
   }
@@ -165,7 +172,7 @@ public class SvnMergeTool {
     }
 
     if (!dryRun) {
-      println 'Committing merged revisions (' + revisionsListLabel + ') ...'
+      printOut.println 'Committing merged revisions (' + revisionsListLabel + ') ...'
       def commentFile = new File('jigomerge-comments.txt')
       commentFile << 'Merged revisions : ' + revisionsListLabel + '\n'
       for (String revision in revisionsList) {
@@ -182,7 +189,7 @@ public class SvnMergeTool {
         throw new RuntimeException('Committing valid revisions merge (' + revisionsListLabel + ') failed !')
       }
     } else {
-      println '[DRY RUN SIMULATION] - Committing merged revisions (' + revisionsListLabel + ') ...'
+      printOut.println '[DRY RUN SIMULATION] - Committing merged revisions (' + revisionsListLabel + ') ...'
     }
   }
 
@@ -288,7 +295,7 @@ public class SvnMergeTool {
       String command = '--accept postpone merge -c ' + revision + ' ' + mergeUrl + ' ' + workingDirectory
       status = executeSvnCommandWithStatus(command)
       if (!status) {
-        println ' Executing ' + command + ' failed !'
+        printOut.println ' Executing ' + command + ' failed !'
         return false
       }
     }
@@ -300,7 +307,7 @@ public class SvnMergeTool {
   }
 
   protected def svnStatus(String workingDirectory) {
-    return svnStatus(' ' + workingDirectory)
+    return svnStatus(' ', workingDirectory)
   }
 
   protected def svnStatus(String options, String workingDirectory) {
@@ -369,9 +376,9 @@ public class SvnMergeTool {
         output.trim().eachLine() {it ->
           debugOuput += '[DEBUG] ' + it + '\n'
         }
-        println '[DEBUG] BEGIN command output :'
-        print debugOuput
-        println '[DEBUG] END command output'
+        printOut.println '[DEBUG] BEGIN command output :'
+        printOut.print debugOuput
+        printOut.println '[DEBUG] END command output'
       }
       def errOutput = process.errorStream.text
       if (errOutput != null && errOutput.trim() != '') {
@@ -379,14 +386,14 @@ public class SvnMergeTool {
         errOutput.trim().eachLine() {it ->
           errDebugOuput += '[DEBUG][ERROR] ' + it + '\n'
         }
-        println '[DEBUG] BEGIN ERROR command output :'
-        print errDebugOuput
-        println '[DEBUG] END ERROR command output'
+        printOut.println '[DEBUG] BEGIN ERROR command output :'
+        printOut.print errDebugOuput
+        printOut.println '[DEBUG] END ERROR command output'
       }
     }
     process.waitFor()
     if (verbose) {
-      println '[DEBUG] exit value : ' + process.exitValue()
+      printOut.println '[DEBUG] exit value : ' + process.exitValue()
     }
  
     return (process.exitValue() == 0)
@@ -398,14 +405,14 @@ public class SvnMergeTool {
 
   protected def executeCommand(String commandLabel, boolean wait) {
     if (verbose) {
-      println '[DEBUG] executing command \'' + commandLabel + '\''
+      printOut.println '[DEBUG] executing command \'' + commandLabel + '\''
     }
     def process = commandLabel.execute()
     
     if(wait){
       process.waitFor()
       if (verbose) {
-        println '[DEBUG] exit value : ' + process.exitValue()
+        printOut.println '[DEBUG] exit value : ' + process.exitValue()
       }
     }
     return process
@@ -455,7 +462,7 @@ public class SvnMergeTool {
 
     List<String> additionalPatterns = extractAdditionalPatterns(options)
 
-    SvnMergeTool tool = new SvnMergeTool(dryRun, additionalPatterns, mergeOneByOne, isMergeEager, isVerbose, username, password)
+    SvnMergeTool tool = new SvnMergeTool(dryRun, additionalPatterns, mergeOneByOne, isMergeEager, isVerbose, username, password, null)
 
     def boolean status = false
 
