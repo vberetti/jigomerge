@@ -208,7 +208,7 @@ public class SvnMergeTool {
     status &= svnUpdate(workingDirectory)
 
     // delete unversionned files
-    listUnversionnedFiles().each() {file ->
+    listUnversionnedFiles(workingDirectory).each() {file ->
       if (file.isDirectory()) {
         file.deleteDir()
       } else {
@@ -222,7 +222,7 @@ public class SvnMergeTool {
   }
 
   protected def List<File> listUnversionnedFiles(String workingDirectory) {
-    def process = svnStatus('--xml ' + workingDirectory)
+    def process = svnStatus('--xml ', workingDirectory)
     def statusXmlLog = process.in.text
     def files = []
 
@@ -238,7 +238,7 @@ public class SvnMergeTool {
   }
 
   protected def hasWorkspaceConflicts(String workingDirectory) {
-    def process = svnStatus('--xml ' + workingDirectory)
+    def process = svnStatus('--xml ', workingDirectory)
     def statusXmlLog = process.in.text
 
     def statusParser = new XmlSlurper().parseText(statusXmlLog)
