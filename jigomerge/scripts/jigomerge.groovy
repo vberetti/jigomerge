@@ -145,7 +145,7 @@ public class SvnMergeTool {
 
     if (!mergeOneByOne) {
       // reset workspace before real merge
-      resetWorkspace()
+      resetWorkspace(workingDirectory)
       if (!validRevisions.isEmpty()) {
 
         // merge all valid revisions
@@ -156,7 +156,7 @@ public class SvnMergeTool {
       }
     }
 
-    svnUpdate()
+    svnUpdate(workingDirectory)
     if (!result.status) {
       printOut.println 'MANUAL MERGE NEEDS TO BE DONE !'
     }
@@ -223,7 +223,7 @@ public class SvnMergeTool {
 
   protected def List<File> listUnversionnedFiles(String workingDirectory) {
     def process = svnStatus('--xml ', workingDirectory)
-    def statusXmlLog = process.in.text
+    def statusXmlLog = process.inText
     def files = []
 
     def statusParser = new XmlSlurper().parseText(statusXmlLog)
@@ -239,7 +239,7 @@ public class SvnMergeTool {
 
   protected def hasWorkspaceConflicts(String workingDirectory) {
     def process = svnStatus('--xml ', workingDirectory)
-    def statusXmlLog = process.in.text
+    def statusXmlLog = process.inText
 
     def statusParser = new XmlSlurper().parseText(statusXmlLog)
     def conflicts = statusParser.target.entry.findAll() {it -> it."wc-status".@item.text() == 'conflicted' || it."wc-status".@props.text() == 'conflicted' || it."wc-status".@"tree-conflicted".text() == "true" }
@@ -273,7 +273,7 @@ public class SvnMergeTool {
 
   protected def String[] retrieveAvailableRevisionsMergeInfo(String mergeUrl, String workingDirectory) {
     def process = executeSvnCommand('mergeinfo --show-revs eligible ' + mergeUrl + ' ' + workingDirectory)
-    def log = process.in.text
+    def log = process.inText
 
     def revisions = []
     log.eachLine() {it ->
@@ -286,7 +286,7 @@ public class SvnMergeTool {
 
   protected def String retrieveCommentFromRevisionWithLog(String mergeUrl, String revision, String workingDirectory) {
     def process = executeSvnCommand('log --xml -r ' + revision + ' ' + mergeUrl + ' ' + workingDirectory)
-    def logXml = process.in.text
+    def logXml = process.inText
 
     def log = new XmlSlurper().parseText(logXml)
     def comment = log.logentry.msg.text()
@@ -377,11 +377,16 @@ public class SvnMergeTool {
   }
 
   protected def executeCommandWithStatus(String commandLabel) {
-    def process = executeCommand(commandLabel)
-    return (process.exitValue() == 0)
+    def process = executeCommand(commandLabel, true)
+    return (process.exitValue == 0)
   }
 
-  protected def executeCommand(String commandLabel) {
+  protected def executeCommand(String commandLabel){
+    return executeCommand(commandLabel, false)
+  }
+
+  protected def executeCommand(String commandLabel, boolean discardOutput) {
+    def processOutput = [:]
     if (verbose) {
       def commandLabelToPrint = commandLabel
       // dirty hack to delete password from verbose
@@ -392,20 +397,35 @@ public class SvnMergeTool {
       printOut.println '[DEBUG] executing command \'' + commandLabelToPrint + '\''
     }
     def process = commandLabel.execute()
+
+    def outBuffer = new ByteArrayOutputStream()
+    def errBuffer = new ByteArrayOutputStream()
     
-    if (verbose){
-      process.consumeProcessOutput(printOut, printOut)
-    } else {
-      // discard output, see http://groovy.codehaus.org/groovy-jdk/java/lang/Process.html#consumeProcessOutput()
-      process.consumeProcessOutput();
+    if(discardOutput){
+      if (verbose){
+        process.consumeProcessOutput(printOut, printOut)
+      } else {
+        // discard output, see http://groovy.codehaus.org/groovy-jdk/java/lang/Process.html#consumeProcessOutput()
+        process.consumeProcessOutput();
+      }
+    }else{
+      process.consumeProcessOutput(outBuffer, errBuffer)
     }
 
     process.waitFor()
 
     if (verbose) {
+      if(!discardOutput){
+         printOut.println outBuffer.toString()
+         printOut.println errBuffer.toString()
+      }
       printOut.println '[DEBUG] exit value : ' + process.exitValue()
     }
-    return process
+    processOutput.exitValue = process.exitValue()
+    processOutput.inText = outBuffer.toString()
+    processOutput.inErrText = errBuffer.toString()
+    
+    return processOutput
   }
 
   public static void main(String[] args) {
