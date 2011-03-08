@@ -377,52 +377,33 @@ public class SvnMergeTool {
   }
 
   protected def executeCommandWithStatus(String commandLabel) {
-    def process = executeCommand(commandLabel, false)
-    if (verbose) {
-      def output = process.in.text
-      if (output != null && output.trim() != '') {
-        def debugOuput = ''
-        output.trim().eachLine() {it ->
-          debugOuput += '[DEBUG] ' + it + '\n'
-        }
-        printOut.println '[DEBUG] BEGIN command output :'
-        printOut.print debugOuput
-        printOut.println '[DEBUG] END command output'
-      }
-      def errOutput = process.errorStream.text
-      if (errOutput != null && errOutput.trim() != '') {
-        def errDebugOuput = ''
-        errOutput.trim().eachLine() {it ->
-          errDebugOuput += '[DEBUG][ERROR] ' + it + '\n'
-        }
-        printOut.println '[DEBUG] BEGIN ERROR command output :'
-        printOut.print errDebugOuput
-        printOut.println '[DEBUG] END ERROR command output'
-      }
-    }
-    process.waitFor()
-    if (verbose) {
-      printOut.println '[DEBUG] exit value : ' + process.exitValue()
-    }
- 
+    def process = executeCommand(commandLabel)
     return (process.exitValue() == 0)
   }
-  
-  protected def executeCommand(String commandLabel){
-    executeCommand(commandLabel, true)
-  }
 
-  protected def executeCommand(String commandLabel, boolean wait) {
+  protected def executeCommand(String commandLabel) {
     if (verbose) {
-      printOut.println '[DEBUG] executing command \'' + commandLabel + '\''
+      def commandLabelToPrint = commandLabel
+      // dirty hack to delete password from verbose
+      if(commandLabel.contains('--password')){
+        def passwordMatcher = commandLabelToPrint =~ "(.* )(--password \\S* )(.*)"
+        commandLabelToPrint = passwordMatcher[0][1] + passwordMatcher[0][3]
+      }
+      printOut.println '[DEBUG] executing command \'' + commandLabelToPrint + '\''
     }
     def process = commandLabel.execute()
     
-    if(wait){
-      process.waitFor()
-      if (verbose) {
-        printOut.println '[DEBUG] exit value : ' + process.exitValue()
-      }
+    if (verbose){
+      process.consumeProcessOutput(printOut, printOut)
+    } else {
+      // discard output, see http://groovy.codehaus.org/groovy-jdk/java/lang/Process.html#consumeProcessOutput()
+      process.consumeProcessOutput();
+    }
+
+    process.waitFor()
+
+    if (verbose) {
+      printOut.println '[DEBUG] exit value : ' + process.exitValue()
     }
     return process
   }
