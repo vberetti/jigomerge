@@ -1,4 +1,4 @@
-/** Copyright Vincent Beretti vberetti|at|gmail.com
+/** Copyright Vincent Beretti vberetti|at|gmail<dot>com
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
