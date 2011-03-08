@@ -54,8 +54,13 @@ public class SvnMergeTool {
    * launch the merge <br>
    * return boolean - true if everything went fine or false if manual merge to be done
    */
-  public def boolean launchSvnMerge(String mergeUrl, String validationScript, String workingDirectory) {
-    def boolean globalStatus = true
+  public def Map launchSvnMerge(String mergeUrl, String validationScript, String workingDirectory) {
+
+    def result = [:]
+    result.status = true
+    result.conflictingRevisions = []
+    result.conflictingLogs = [:]
+    result.conflictingDiffs = [:]
 
     // reset workspace
     resetWorkspace(workingDirectory)
@@ -103,14 +108,18 @@ public class SvnMergeTool {
 
         svnMergeMerge(mergeUrl, subRevisions, workingDirectory)
 
-        def hasConflicts = hasWorkspaceConflicts(workingDirectory)
+        def conflicts = hasWorkspaceConflicts(workingDirectory)
+        def hasConflicts = conflicts.size() > 0
 
         // in any case, revert changes, cleanup workspace
         resetWorkspace(workingDirectory)
 
         if (hasConflicts) {
           // globalStatus is set to false, this means manual merge needs to be done
-          globalStatus = false
+          result.status = false
+          result.conflictingRevisions.add(revision)
+          result.conflictingFiles.put(revision, conflicts)
+          result.conflictingLogs.put(revision, comment)
 
           if (!mergeEager) {
             printOut.println '  Revision ' + revision + ' has conflict, merging only previous revisions ...'
@@ -148,12 +157,12 @@ public class SvnMergeTool {
     }
 
     svnUpdate()
-    if (!globalStatus) {
+    if (!result.status) {
       printOut.println 'MANUAL MERGE NEEDS TO BE DONE !'
     }
     printOut.println 'Merge is finished !'
 
-    return globalStatus
+    return result
   }
 
   protected def void svnMergeAndCommit(String mergeUrl, List<String> revisionsList, String validationScript, String workingDirectory) {
@@ -228,14 +237,14 @@ public class SvnMergeTool {
     return files
   }
 
-  protected def boolean hasWorkspaceConflicts(String workingDirectory) {
+  protected def hasWorkspaceConflicts(String workingDirectory) {
     def process = svnStatus('--xml ' + workingDirectory)
     def statusXmlLog = process.in.text
 
     def statusParser = new XmlSlurper().parseText(statusXmlLog)
     def conflicts = statusParser.target.entry.findAll() {it -> it."wc-status".@item.text() == 'conflicted' || it."wc-status".@props.text() == 'conflicted' || it."wc-status".@"tree-conflicted".text() == "true" }
 
-    return conflicts.size() > 0
+    return conflicts
   }
 
   protected def String buildRevisionsList(List<String> revisions) {
@@ -466,7 +475,8 @@ public class SvnMergeTool {
 
     def boolean status = false
 
-    status = tool.launchSvnMerge(mergeUrl, validationScript, '.')
+    def result = tool.launchSvnMerge(mergeUrl, validationScript, '.')
+    status = result.status
 
     System.exit(status ? 0 : 1)
   }
@@ -490,6 +500,6 @@ public class SvnMergeTool {
     }
     return additionalPatterns
   }
-}
 
+}
 
