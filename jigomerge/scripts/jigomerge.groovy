@@ -61,6 +61,7 @@ public class SvnMergeTool {
     result.conflictingRevisions = []
     result.conflictingLogs = [:]
     result.conflictingDiffs = [:]
+    result.conflictingFiles = [:]
 
     // reset workspace
     resetWorkspace(workingDirectory)
@@ -168,7 +169,7 @@ public class SvnMergeTool {
   protected def void svnMergeAndCommit(String mergeUrl, List<String> revisionsList, String validationScript, String workingDirectory) {
 
     def revisionsListLabel = buildRevisionsList(revisionsList)
-    def status = svnMergeMerge(mergeUrl, revisionsList)
+    def status = svnMergeMerge(mergeUrl, revisionsList, workingDirectory)
     if (!status) {
       throw new RuntimeException('Merging valid revisions (' + revisionsListLabel + ') failed !')
     }
