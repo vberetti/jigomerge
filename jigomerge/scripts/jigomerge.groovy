@@ -187,7 +187,7 @@ public class SvnMergeTool {
       commentFile << 'Merged revisions : ' + revisionsListLabel + '\n'
       for (String revision in revisionsList) {
         def revisionComment = retrieveCommentFromRevisionWithLog(mergeUrl, revision, workingDirectory)
-        commentFile << 'Revision  #' + revision + '\n'
+        commentFile << 'Revision  r' + revision + '\n'
         commentFile << '----------------------\n'
         commentFile << revisionComment + '\n'
         commentFile << '----------------------\n'
@@ -330,7 +330,7 @@ public class SvnMergeTool {
 
   protected def boolean svnCommitMergeBlock(String revision, String comment, String workingDirectory) {
     def commentFile = new File('jigomerge-comments.txt')
-    commentFile << 'Block revision #' + revision + '\n'
+    commentFile << 'Block revision r' + revision + '\n'
     commentFile << 'Initial message was : ' + comment
     def status = svnCommit('-F ' + commentFile.path, workingDirectory)
     commentFile.delete()
