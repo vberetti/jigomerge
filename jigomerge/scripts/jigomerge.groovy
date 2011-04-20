@@ -78,7 +78,7 @@ public class SvnMergeTool {
     for (int i = 0; i < nbRevisions; i++) {
       def revision = revisions[i]
       printOut.println ' Handling revision ' + revision + ' ...'
-      def comment = retrieveCommentFromRevisionWithLog(mergeUrl, revision, workingDirectory)
+      def comment = retrieveCommentFromRevisionWithLog(mergeUrl, revision)
 
       // verify on comment that revision should not be blocked
       if (shouldRevisionBeBlocked(comment)) {
@@ -186,7 +186,7 @@ public class SvnMergeTool {
       def commentFile = new File('jigomerge-comments.txt')
       commentFile << 'Merged revisions : ' + revisionsListLabel + '\n'
       for (String revision in revisionsList) {
-        def revisionComment = retrieveCommentFromRevisionWithLog(mergeUrl, revision, workingDirectory)
+        def revisionComment = retrieveCommentFromRevisionWithLog(mergeUrl, revision)
         commentFile << 'Revision  r' + revision + '\n'
         commentFile << '----------------------\n'
         commentFile << revisionComment + '\n'
@@ -285,8 +285,8 @@ public class SvnMergeTool {
   }
 
 
-  protected def String retrieveCommentFromRevisionWithLog(String mergeUrl, String revision, String workingDirectory) {
-    def process = executeSvnCommand('log --xml -r ' + revision + ' ' + mergeUrl + ' ' + workingDirectory)
+  protected def String retrieveCommentFromRevisionWithLog(String mergeUrl, String revision) {
+    def process = executeSvnCommand('log --xml -r ' + revision + ' ' + mergeUrl)
     def logXml = process.inText
 
     def log = new XmlSlurper().parseText(logXml)
