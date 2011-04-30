@@ -14,7 +14,7 @@
  * */
 public class SvnMergeTool {
 
-  def static final List<String> DEFAULT_NO_MERGE_COMMENT_PATTERNS = ['maven-release-plugin', 'NOMERGE', 'NO-MERGE', 'Initialized merge tracking via "svnmerge" with revisions']
+  def static final List<String> DEFAULT_NO_MERGE_COMMENT_PATTERNS = ['maven-release-plugin', 'NOMERGE', 'NO-MERGE', 'NO MERGE', 'NO_MERGE']
 
   /** parameter dryRun - should the script commit the changes or not             */
   def boolean dryRun = true
