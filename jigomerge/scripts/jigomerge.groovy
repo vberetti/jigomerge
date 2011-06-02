@@ -119,7 +119,7 @@ public class SvnMergeTool {
           // globalStatus is set to false, this means manual merge needs to be done
           result.status = false
           result.conflictingRevisions.add(revision)
-          result.conflictingFiles.put(revision, conflicts)
+          result.conflictingFiles.put(revision, conflicts.toString())
           result.conflictingLogs.put(revision, comment)
 
           if (!mergeEager) {
@@ -166,10 +166,66 @@ public class SvnMergeTool {
     return result
   }
 
+
+  /**
+   * ignore a revision in merge <br>
+   * return boolean - true if everything went fine or false if an error occurred
+   */
+  public def Map mergeIgnoreRevision(String mergeUrl, String revision, String workingDirectory) {
+      def result = [:]
+    result.status = true
+    result.conflictingRevisions = []
+    result.conflictingLogs = [:]
+    result.conflictingDiffs = [:]
+    result.conflictingFiles = [:]
+
+    // reset workspace
+    resetWorkspace(workingDirectory)
+    def status = svnMergeBlock(mergeUrl, revision, workingDirectory)
+    if (!status) {
+       throw new RuntimeException('Blocking revision ' + revision + ' failed !')
+    }
+
+    return status
+  }
+
+  /**
+   * force the merge of a revision <br>
+   * return boolean - true if everything went fine or false if an error occurred
+   */
+  public def Map mergeForceRevision(String mergeUrl, String revision, String validationScript, String workingDirectory) {
+    def result = [:]
+    result.status = true
+    result.conflictingRevisions = []
+    result.conflictingLogs = [:]
+    result.conflictingDiffs = [:]
+    result.conflictingFiles = [:]
+
+    // reset workspace
+    resetWorkspace(workingDirectory)
+
+
+    svnMergeMerge(mergeUrl, subRevisions, workingDirectory, 'theirs-full')
+
+    def conflicts = hasWorkspaceConflicts(workingDirectory)
+    def hasConflicts = conflicts.size() > 0
+
+    // in any case, revert changes, cleanup workspace
+    resetWorkspace(workingDirectory)
+
+    svnMergeAndCommit(mergeUrl, [revision], validationScript, workingDirectory, 'theirs-full')
+
+      return result
+  }
+
   protected def void svnMergeAndCommit(String mergeUrl, List<String> revisionsList, String validationScript, String workingDirectory) {
+      svnMergeAndCommit(mergeUrl, revisionsList, validationScript, workingDirectory, 'postpone')
+  }
+
+  protected def void svnMergeAndCommit(String mergeUrl, List<String> revisionsList, String validationScript, String workingDirectory, String mergeOption) {
 
     def revisionsListLabel = buildRevisionsList(revisionsList)
-    def status = svnMergeMerge(mergeUrl, revisionsList, workingDirectory)
+    def status = svnMergeMerge(mergeUrl, revisionsList, workingDirectory, mergeOption)
     if (!status) {
       throw new RuntimeException('Merging valid revisions (' + revisionsListLabel + ') failed !')
     }
@@ -300,9 +356,13 @@ public class SvnMergeTool {
   }
 
   protected def boolean svnMergeMerge(String mergeUrl, List<String> revisions, String workingDirectory) {
+    return svnMergeMerge(mergeUrl, revisions, workingDirectory, 'postpone')
+  }
+
+  protected def boolean svnMergeMerge(String mergeUrl, List<String> revisions, String workingDirectory, String mergeOption) {
     boolean status = true
     for (String revision: revisions) {
-      String command = '--accept postpone merge -c ' + revision + ' ' + mergeUrl + ' ' + workingDirectory
+      String command = '--accept ' + mergeOption + ' merge -c ' + revision + ' ' + mergeUrl + ' ' + workingDirectory
       status = executeSvnCommandWithStatus(command)
       if (!status) {
         printOut.println ' Executing ' + command + ' failed !'
@@ -442,6 +502,8 @@ public class SvnMergeTool {
     cli.u(longOpt: 'username', args: 1, 'username to use in svn commands')
     cli.p(longOpt: 'password', args: 1, 'password to use in svn commands')
     cli.V(longOpt: 'validation', args: 1, 'validation script');
+    cli.i(longOpt: 'ignore', args: 1, '[CONFLICT-RESOLUTION] run jigomerge to ignore the revision in arg');
+    cli.f(longOpt: 'force-merge', args: 1, '[CONCLICT-RESOLUTION] run jigomerge to force the merge the revision in arg');
     cli.v(longOpt: 'verbose', 'verbose mode')
     def options = cli.parse(args)
 
@@ -473,13 +535,27 @@ public class SvnMergeTool {
 
     List<String> additionalPatterns = extractAdditionalPatterns(options)
 
+    // retrieve merge mode
+    def boolean isMergeIgnoreRevision = options.i
+    def boolean isMergeForceRevision = options.f
+
     SvnMergeTool tool = new SvnMergeTool(dryRun, additionalPatterns, mergeOneByOne, isMergeEager, isVerbose, username, password, null)
 
     def boolean status = false
 
-    def result = tool.launchSvnMerge(mergeUrl, validationScript, '.')
-    status = result.status
+    def result = null
 
+    if(isMergeIgnoreRevision){
+      def revision = new String(options.i.value)
+      result = tool.mergeIgnoreRevision(mergeUrl, revision, '.')
+    }else if(isMergeForceRevision){
+      def revision = new String(options.i.value)
+      result = tool.mergeForceRevision(mergeUrl, revision, validationScript, '.')
+    }else{
+      result = tool.launchSvnMerge(mergeUrl, validationScript, '.')
+    }
+
+    status = result.status
     System.exit(status ? 0 : 1)
   }
 
