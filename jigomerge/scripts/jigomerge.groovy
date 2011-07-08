@@ -26,8 +26,9 @@ public class SvnMergeTool {
   def String username = null
   def String password = null
   def PrintStream printOut = null;
+  def String commentPrefix = '';
 
-  public SvnMergeTool(boolean dryRun, List<String> noMergeCommentPatterns, boolean mergeOneByOne, boolean mergeEager, boolean verbose, String username, String password, OutputStream output) {
+  public SvnMergeTool(boolean dryRun, List<String> noMergeCommentPatterns, boolean mergeOneByOne, boolean mergeEager, boolean verbose, String username, String password, OutputStream output, String commentPrefix) {
     this.dryRun = dryRun
     if (noMergeCommentPatterns.isEmpty()) {
       this.noMergeCommentPatterns = DEFAULT_NO_MERGE_COMMENT_PATTERNS
@@ -47,6 +48,10 @@ public class SvnMergeTool {
       printOut = new PrintStream(output);
     }else{
       printOut = System.out;
+    }
+
+    if(commentPrefix != null){
+      this.commentPrefix = commentPrefix
     }
   }
 
@@ -240,6 +245,7 @@ public class SvnMergeTool {
     if (!dryRun) {
       printOut.println 'Committing merged revisions (' + revisionsListLabel + ') ...'
       def commentFile = File.createTempFile('jigomerge-comments', '.txt')
+      commentFile << commentPrefix
       commentFile << 'Merged revisions : ' + revisionsListLabel + '\n'
       for (String revision in revisionsList) {
         def revisionComment = retrieveCommentFromRevisionWithLog(mergeUrl, revision)
@@ -390,6 +396,7 @@ public class SvnMergeTool {
 
   protected def boolean svnCommitMergeBlock(String revision, String comment, String workingDirectory) {
     def commentFile = File.createTempFile('jigomerge-comments', '.txt')
+    commentFile << commentPrefix
     commentFile << 'Block revision r' + revision + '\n'
     commentFile << 'Initial message was : ' + comment
     def status = svnCommit('-F ' + commentFile.path, workingDirectory)
@@ -501,6 +508,7 @@ public class SvnMergeTool {
     cli.e(longOpt: 'eager', 'eager merge: merge every revision that can be merged without conflict even if it follows a conflict')
     cli.u(longOpt: 'username', args: 1, 'username to use in svn commands')
     cli.p(longOpt: 'password', args: 1, 'password to use in svn commands')
+    cli.P(longOpt: 'comment-prefix', args: 1, 'Prefix used in comment before each commit');
     cli.V(longOpt: 'validation', args: 1, 'validation script');
     cli.i(longOpt: 'ignore', args: 1, '[CONFLICT-RESOLUTION] run jigomerge to ignore the revision in arg');
     cli.f(longOpt: 'force-merge', args: 1, '[CONCLICT-RESOLUTION] run jigomerge to force the merge the revision in arg');
@@ -533,13 +541,18 @@ public class SvnMergeTool {
       validationScript = new String(options.V.value)
     }
 
+    def String commentPrefix = ''
+    if(options.P){
+      commentPrefix = new String(options.P.value)
+    }
+
     List<String> additionalPatterns = extractAdditionalPatterns(options)
 
     // retrieve merge mode
     def boolean isMergeIgnoreRevision = options.i
     def boolean isMergeForceRevision = options.f
 
-    SvnMergeTool tool = new SvnMergeTool(dryRun, additionalPatterns, mergeOneByOne, isMergeEager, isVerbose, username, password, null)
+    SvnMergeTool tool = new SvnMergeTool(dryRun, additionalPatterns, mergeOneByOne, isMergeEager, isVerbose, username, password, null, commentPrefix)
 
     def boolean status = false
 
