@@ -210,7 +210,7 @@ public class SvnMergeTool {
     resetWorkspace(workingDirectory)
 
 
-    svnMergeMerge(mergeUrl, subRevisions, workingDirectory, 'theirs-full')
+    svnMergeMerge(mergeUrl, [revision], workingDirectory, 'theirs-full')
 
     def conflicts = hasWorkspaceConflicts(workingDirectory)
     def hasConflicts = conflicts.size() > 0
