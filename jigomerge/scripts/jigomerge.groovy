@@ -562,7 +562,7 @@ public class SvnMergeTool {
       def revision = new String(options.i.value)
       result = tool.mergeIgnoreRevision(mergeUrl, revision, '.')
     }else if(isMergeForceRevision){
-      def revision = new String(options.i.value)
+      def revision = new String(options.f.value)
       result = tool.mergeForceRevision(mergeUrl, revision, validationScript, '.')
     }else{
       result = tool.launchSvnMerge(mergeUrl, validationScript, '.')
